@@ -7,6 +7,7 @@ from tempfile import gettempdir
 
 import pytest
 from pytesseract import (
+    ALTONotSupported,
     Output,
     TesseractNotFoundError,
     TSVNotSupported,
@@ -57,6 +58,11 @@ def test_invalid_file():
 @pytest.fixture(scope='session')
 def test_file_european():
     return path.join(DATA_DIR, 'test-european.jpg')
+
+
+@pytest.fixture(scope='session')
+def test_file_small():
+    return path.join(DATA_DIR, 'test-small.jpg')
 
 
 @pytest.mark.parametrize(
@@ -204,7 +210,7 @@ def test_image_to_pdf_or_hocr(test_file, extension):
 
 
 @pytest.mark.skipif(
-    TESSERACT_VERSION[:2] < (4, 1), reason='requires tesseract < 3.05',
+    TESSERACT_VERSION[:2] < (4, 1), reason='requires tesseract >= 4.1',
 )
 def test_image_to_alto_xml(test_file):
     result = image_to_alto_xml(test_file)
@@ -216,20 +222,29 @@ def test_image_to_alto_xml(test_file):
 
 
 @pytest.mark.skipif(
+
+    TESSERACT_VERSION[:2] >= (4, 1), reason='requires tesseract < 4.1',
+)
+def test_image_to_alto_xml_support(test_file):
+    with pytest.raises(ALTONotSupported):
+        image_to_alto_xml(test_file)
+
+
+@pytest.mark.skipif(
     TESSERACT_VERSION[:2] >= (3, 5), reason='requires tesseract < 3.05',
 )
-def test_image_to_data__pandas_support(test_file):
+def test_image_to_data__pandas_support(test_file_small):
     with pytest.raises(TSVNotSupported):
-        image_to_data(test_file, output_type=Output.DATAFRAME)
+        image_to_data(test_file_small, output_type=Output.DATAFRAME)
 
 
 @pytest.mark.skipif(
     TESSERACT_VERSION[:2] < (3, 5), reason='requires tesseract >= 3.05',
 )
 @pytest.mark.skipif(pandas_installed is False, reason='requires pandas')
-def test_image_to_data__pandas_output(test_file):
+def test_image_to_data__pandas_output(test_file_small):
     """Test and compare the type and meta information of the result."""
-    result = image_to_data(test_file, output_type=Output.DATAFRAME)
+    result = image_to_data(test_file_small, output_type=Output.DATAFRAME)
     assert isinstance(result, pandas.DataFrame)
     expected_columns = [
         'level',
@@ -256,34 +271,33 @@ def test_image_to_data__pandas_output(test_file):
     [Output.BYTES, Output.DICT, Output.STRING],
     ids=['bytes', 'dict', 'string'],
 )
-def test_image_to_data_common_output(test_file, output):
+def test_image_to_data_common_output(test_file_small, output):
     """Test and compare the type of the result."""
-    result = image_to_data(test_file, output_type=output)
-    expected_keys = [
-        'level',
-        'page_num',
-        'block_num',
-        'par_num',
-        'line_num',
-        'word_num',
-        'left',
-        'top',
-        'width',
-        'height',
-        'conf',
-        'text',
-    ]
+    result = image_to_data(test_file_small, output_type=output)
+    expected_dict_result = {
+        'level': [1, 2, 3, 4, 5],
+        'page_num': [1, 1, 1, 1, 1],
+        'block_num': [0, 1, 1, 1, 1],
+        'par_num': [0, 0, 1, 1, 1],
+        'line_num': [0, 0, 0, 1, 1],
+        'word_num': [0, 0, 0, 0, 1],
+        'left': [0, 11, 11, 11, 11],
+        'top': [0, 11, 11, 11, 11],
+        'width': [79, 60, 60, 60, 60],
+        'height': [47, 24, 24, 24, 24],
+        'conf': ['-1', '-1', '-1', '-1', 96],
+        'text': ['', '', '', '', 'This'],
+    }
 
     if output is Output.BYTES:
         assert isinstance(result, bytes)
 
     elif output is Output.DICT:
-        assert isinstance(result, dict)
-        assert bool(set(result.keys()).intersection(expected_keys))
+        assert result == expected_dict_result
 
     elif output is Output.STRING:
         assert isinstance(result, string_type)
-        for key in expected_keys:
+        for key in expected_dict_result.keys():
             assert key in result
 
 

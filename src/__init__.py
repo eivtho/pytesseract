@@ -1,4 +1,5 @@
 from .pytesseract import (  # noqa: F401
+    ALTONotSupported,
     Output,
     TesseractError,
     TesseractNotFoundError,
